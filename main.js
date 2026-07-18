@@ -106,6 +106,7 @@ const rocketState = {
   flameIntensity: 0,
   grounded: false,
   launched: false,
+  wasUnderwater: false,
 };
 
 let launcher; // rampe de lancement (mode Libre uniquement)
@@ -152,6 +153,7 @@ const cameraRig = {
 // aplati vers un fond marin profond, avec un rayon qui dépasse la distance
 // du brouillard, donc aucune terre ne peut jamais apparaître à l'horizon.
 let oceanSafeZone = null; // { x, z, radius } uniquement en mode Cible
+const OCEAN_DEPTH = 55; // profondeur du fond marin sous la surface — assez pour un sous-marin bien immergé et un vrai trajet sous l'eau
 
 function heightAt(x, z) {
   const h = fbm(noise2D, x * 0.006 + 100, z * 0.006 + 100, 5);
@@ -164,7 +166,7 @@ function heightAt(x, z) {
     if (dist < oceanSafeZone.radius) {
       const t = dist / oceanSafeZone.radius;
       const blend = t * t * (3 - 2 * t); // smoothstep : 0 au centre, 1 au bord
-      const deepY = WATER_LEVEL - 12;
+      const deepY = WATER_LEVEL - OCEAN_DEPTH;
       return deepY + (y - deepY) * blend;
     }
   }
@@ -828,6 +830,7 @@ function buildBoat(x, z) {
 }
 
 const SUB_DECK_HEIGHT = 2.85;
+const SUB_SUBMERGE_DEPTH = 26; // profondeur sous la surface — kiosque compris, rien ne dépasse
 
 function buildSubmarine(x, z) {
   const group = new THREE.Group();
@@ -836,7 +839,7 @@ function buildSubmarine(x, z) {
   const towerMat = new THREE.MeshStandardMaterial({ color: 0x232b2a, flatShading: true, roughness: 0.55, metalness: 0.3 });
   const stripeMat = new THREE.MeshStandardMaterial({ color: 0xd93a2b, flatShading: true });
 
-  // Coque principale, aux trois quarts immergée sous le plan d'eau.
+  // Coque principale, entièrement immergée en profondeur.
   const midHull = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 6, 10), hullMat);
   midHull.rotation.x = Math.PI / 2;
   midHull.position.set(0, -0.9, 0);
@@ -877,7 +880,7 @@ function buildSubmarine(x, z) {
     group.add(fin);
   }
 
-  group.position.set(x, WATER_LEVEL, z);
+  group.position.set(x, WATER_LEVEL - SUB_SUBMERGE_DEPTH, z);
   scene.add(group);
   return group;
 }
@@ -997,6 +1000,28 @@ function spawnLaunchSmoke() {
       endColor: 0x8a8a86,
       drag: 0.92,
       gravity: -1.2,
+    });
+  }
+}
+
+// Gerbe d'éclaboussures au franchissement de la surface (entrée ou sortie de l'eau).
+function spawnSplash(position) {
+  for (let i = 0; i < 26; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spread = new THREE.Vector3(
+      Math.cos(angle) * (4 + Math.random() * 5),
+      3 + Math.random() * 5,
+      Math.sin(angle) * (4 + Math.random() * 5)
+    );
+    emitParticle(position, spread, {
+      maxLife: 0.4 + Math.random() * 0.4,
+      startScale: 0.6 + Math.random() * 0.7,
+      endScale: 2.2,
+      startOpacity: 0.9,
+      startColor: 0xdff2ff,
+      endColor: 0x6fa8c9,
+      drag: 0.9,
+      gravity: 14,
     });
   }
 }
@@ -1486,8 +1511,10 @@ function restart() {
       rocketState.heading = planeState.heading;
       rocketState.pitchAngle = 0;
     } else {
-      const deckHeight = missionStart === "boat" ? BOAT_DECK_HEIGHT : SUB_DECK_HEIGHT;
-      rocketState.position.set(originX, WATER_LEVEL + deckHeight + 1.7, originZ);
+      const deckY = missionStart === "boat"
+        ? WATER_LEVEL + BOAT_DECK_HEIGHT
+        : WATER_LEVEL - SUB_SUBMERGE_DEPTH + SUB_DECK_HEIGHT;
+      rocketState.position.set(originX, deckY + 1.2, originZ);
     }
     flashToast(`Fonce sur ${ENTITY_LABEL[missionTarget]} !`);
   } else {
@@ -1498,6 +1525,7 @@ function restart() {
   }
 
   rocketState.orientation.copy(headingPitchOrientation(rocketState.heading, rocketState.pitchAngle));
+  rocketState.wasUnderwater = rocketState.position.y < WATER_LEVEL;
   buildRocket();
 
   cameraRig.yaw = rocketState.heading;
@@ -1547,6 +1575,7 @@ function headingPitchOrientation(heading, pitchAngle) {
 const THRUST_ACCEL = 62;
 const GRAVITY = 18;
 const QUADRATIC_DRAG = 0.0022;
+const WATER_DRAG = 0.05; // résistance de l'eau, bien plus forte que l'air
 const LATERAL_DAMPING = 0.9; // ne s'applique que sous poussée : c'est le vecteur de poussée qui redirige la trajectoire, pas l'orientation seule
 
 const RESTITUTION = 0.42;
@@ -1635,11 +1664,22 @@ function updateRocket(dt, elapsed) {
   }
   rocketState.velocity.y -= GRAVITY * dt;
 
+  // Sous l'eau, une traînée bien plus forte simule la résistance du liquide :
+  // le missile ralentit nettement plus vite qu'en l'air (compense-le avec le
+  // booster pour continuer à avancer sous la surface).
+  const isUnderwater = rocketState.position.y < WATER_LEVEL;
+  const dragCoeff = isUnderwater ? WATER_DRAG : QUADRATIC_DRAG;
+
   const speed = rocketState.velocity.length();
   if (speed > 0.001) {
-    const dragMag = QUADRATIC_DRAG * speed * speed;
+    const dragMag = dragCoeff * speed * speed;
     rocketState.velocity.addScaledVector(rocketState.velocity, -(dragMag * dt) / speed);
   }
+
+  if (isUnderwater !== rocketState.wasUnderwater) {
+    spawnSplash(rocketState.position.clone().setY(WATER_LEVEL));
+  }
+  rocketState.wasUnderwater = isUnderwater;
 
   // Sous poussée seulement, le vecteur de poussée "carve" progressivement la trajectoire
   // vers le nez (comme un vrai empennage sous flux d'air propulsé). Sans poussée, la
@@ -1756,6 +1796,23 @@ const CAMERA_HEIGHT_ABOVE = 11; // hauteur au-dessus du missile (vue en surplomb
 const MOUSE_LOOK_YAW = 1.1; // amplitude max (rad) du balayage horizontal à la souris
 const MOUSE_LOOK_PITCH = 0.7; // amplitude max (rad) du balayage vertical à la souris
 const smoothedMouseLook = { x: 0, y: 0 };
+
+const SURFACE_FOG_COLOR = new THREE.Color(0x9fd3e8);
+const UNDERWATER_FOG_COLOR = new THREE.Color(0x0d3a4a);
+let underwaterBlend = 0;
+
+// Brouillard et fond assombris/resserrés dès que la caméra passe sous la
+// surface : donne une vraie sensation d'immersion plutôt qu'un ciel qui
+// continue comme si de rien n'était sous l'eau.
+function updateUnderwaterEffect(dt) {
+  const target = camera.position.y < WATER_LEVEL ? 1 : 0;
+  underwaterBlend = THREE.MathUtils.lerp(underwaterBlend, target, 1 - Math.pow(0.001, dt));
+  const color = SURFACE_FOG_COLOR.clone().lerp(UNDERWATER_FOG_COLOR, underwaterBlend);
+  scene.background.copy(color);
+  scene.fog.color.copy(color);
+  scene.fog.near = THREE.MathUtils.lerp(220, 2, underwaterBlend);
+  scene.fog.far = THREE.MathUtils.lerp(620, 90, underwaterBlend);
+}
 
 function updateCamera(dt) {
   // Vue en surplomb à angle fixe : la caméra ne suit que le cap (lacet) du
@@ -1985,6 +2042,7 @@ function animate() {
     updatePlane(dt, elapsed);
     checkTargetHit();
     updateCamera(dt);
+    updateUnderwaterEffect(dt);
 
     sinceChunkUpdate += dt;
     if (sinceChunkUpdate > 0.3) {
