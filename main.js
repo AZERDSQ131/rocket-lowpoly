@@ -108,14 +108,21 @@ const rocketState = {
   launched: false,
 };
 
-let launcher;
+let launcher; // rampe de lancement (mode Libre uniquement)
 
 let gameMode = "free"; // "free" | "target"
-let targetConfig = "boatToPlane"; // "boatToPlane" | "planeToBoat" (pertinent seulement si gameMode === "target")
+// Configuration manuelle du mode Cible : n'importe quelle combinaison
+// départ/cible parmi bateau, avion, sous-marin (sauf les deux identiques).
+let missionStart = "boat"; // "boat" | "plane" | "submarine"
+let missionTarget = "plane"; // "boat" | "plane" | "submarine"
 let menuOpen = true;
 let plane, planeState;
-let attachedToPlane = false; // en "planeToBoat" : le missile suit l'avion tant qu'il n'est pas lancé
-let boatAlive = true; // le bateau sert de cible en "planeToBoat"
+let attachedToPlane = false; // si le départ est l'avion : le missile suit sa position tant qu'il n'est pas lancé
+let startMesh = null; // objet statique de départ (bateau/sous-marin), le cas échéant
+let targetMesh = null; // objet statique visé (bateau/sous-marin), le cas échéant
+let targetAlive = true; // statut de la cible statique (bateau ou sous-marin)
+
+const ENTITY_LABEL = { boat: "le bateau", plane: "l'avion", submarine: "le sous-marin" };
 
 const cameraShake = { intensity: 0 };
 
@@ -698,12 +705,12 @@ function updatePlane(dt, elapsed) {
 // configuration choisie (l'avion ou le bateau peuvent être la cible).
 function getTargetInfo() {
   if (gameMode !== "target") return null;
-  if (targetConfig === "boatToPlane") {
+  if (missionTarget === "plane") {
     if (!plane || !planeState || !planeState.alive) return null;
     return { position: plane.position };
   }
-  if (!launcher || !boatAlive) return null;
-  return { position: launcher.position.clone().add(new THREE.Vector3(0, 1, 0)) };
+  if (!targetMesh || !targetAlive) return null;
+  return { position: targetMesh.position.clone().add(new THREE.Vector3(0, 1, 0)) };
 }
 
 function checkTargetHit() {
@@ -716,12 +723,12 @@ function checkTargetHit() {
 }
 
 function onTargetHit(info) {
-  if (targetConfig === "boatToPlane") {
+  if (missionTarget === "plane") {
     planeState.alive = false;
     plane.visible = false;
   } else {
-    boatAlive = false;
-    launcher.visible = false;
+    targetAlive = false;
+    targetMesh.visible = false;
   }
   const explosionPos = info.position.clone();
   spawnExplosion(explosionPos);
@@ -814,6 +821,61 @@ function buildBoat(x, z) {
   const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.2, 6), hullMat);
   mast.position.set(-2.8, 2.9, 0);
   group.add(mast);
+
+  group.position.set(x, WATER_LEVEL, z);
+  scene.add(group);
+  return group;
+}
+
+const SUB_DECK_HEIGHT = 2.85;
+
+function buildSubmarine(x, z) {
+  const group = new THREE.Group();
+
+  const hullMat = new THREE.MeshStandardMaterial({ color: 0x2f3b3a, flatShading: true, roughness: 0.6, metalness: 0.3 });
+  const towerMat = new THREE.MeshStandardMaterial({ color: 0x232b2a, flatShading: true, roughness: 0.55, metalness: 0.3 });
+  const stripeMat = new THREE.MeshStandardMaterial({ color: 0xd93a2b, flatShading: true });
+
+  // Coque principale, aux trois quarts immergée sous le plan d'eau.
+  const midHull = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 6, 10), hullMat);
+  midHull.rotation.x = Math.PI / 2;
+  midHull.position.set(0, -0.9, 0);
+  group.add(midHull);
+
+  const bow = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 1.3, 3, 10), hullMat);
+  bow.rotation.x = -Math.PI / 2;
+  bow.position.set(0, -0.9, 4.5);
+  group.add(bow);
+
+  const stern = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 0.25, 2.6, 10), hullMat);
+  stern.rotation.x = Math.PI / 2;
+  stern.position.set(0, -0.9, -4.3);
+  group.add(stern);
+
+  const stripe = new THREE.Mesh(new THREE.CylinderGeometry(1.32, 1.32, 0.5, 10), stripeMat);
+  stripe.rotation.x = Math.PI / 2;
+  stripe.position.set(0, -0.9, 1.5);
+  group.add(stripe);
+
+  // Kiosque (massif), avec un pont plat où le missile peut se dresser.
+  const tower = new THREE.Mesh(new THREE.BoxGeometry(1.6, 3.6, 3.2), towerMat);
+  tower.position.set(0, 0.9, 0.5);
+  group.add(tower);
+
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.15, 3), towerMat);
+  deck.position.set(0, 2.78, 0.5);
+  group.add(deck);
+
+  const periscope = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.6, 6), hullMat);
+  periscope.position.set(0.5, 3.6, -0.6);
+  group.add(periscope);
+
+  const finGeo = new THREE.BoxGeometry(0.1, 1.2, 1.4);
+  for (const side of [-1, 1]) {
+    const fin = new THREE.Mesh(finGeo, hullMat);
+    fin.position.set(side * 1.1, -0.9, -4.8);
+    group.add(fin);
+  }
 
   group.position.set(x, WATER_LEVEL, z);
   scene.add(group);
@@ -1298,10 +1360,26 @@ function init() {
 
   document.getElementById("modeFreeBtn").addEventListener("click", () => startGame("free"));
   document.getElementById("modeTargetBtn").addEventListener("click", showTargetConfigMenu);
-  document.getElementById("configBoatToPlaneBtn").addEventListener("click", () => startGame("target", "boatToPlane"));
-  document.getElementById("configPlaneToBoatBtn").addEventListener("click", () => startGame("target", "planeToBoat"));
   document.getElementById("backToMainMenuBtn").addEventListener("click", showMainMenuGrid);
   document.getElementById("menuButton").addEventListener("click", showMenu);
+
+  const startSelect = document.getElementById("startSelect");
+  const targetSelect = document.getElementById("targetSelect");
+  const configWarning = document.getElementById("configWarning");
+  const launchConfigBtn = document.getElementById("launchConfigBtn");
+
+  function validateConfig() {
+    const same = startSelect.value === targetSelect.value;
+    configWarning.classList.toggle("hidden", !same);
+    launchConfigBtn.disabled = same;
+  }
+  startSelect.addEventListener("change", validateConfig);
+  targetSelect.addEventListener("change", validateConfig);
+  validateConfig();
+
+  launchConfigBtn.addEventListener("click", () => {
+    startGame("target", startSelect.value, targetSelect.value);
+  });
 
   animate();
 }
@@ -1326,9 +1404,10 @@ function showTargetConfigMenu() {
   document.getElementById("backToMainMenuBtn").classList.remove("hidden");
 }
 
-function startGame(mode, config = "boatToPlane") {
+function startGame(mode, start = "boat", target = "plane") {
   gameMode = mode;
-  targetConfig = config;
+  missionStart = start;
+  missionTarget = target;
   menuOpen = false;
   document.getElementById("menuOverlay").classList.add("hidden");
   restart();
@@ -1341,38 +1420,18 @@ function restart() {
   clearAllChunks();
   clearAllSky();
 
-  if (rocket) {
-    scene.remove(rocket);
-    rocket.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+  for (const obj of [rocket, launcher, startMesh, targetMesh, plane]) {
+    if (!obj) continue;
+    scene.remove(obj);
+    obj.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
   }
-  if (launcher) {
-    scene.remove(launcher);
-    launcher.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
-  }
-  if (plane) {
-    scene.remove(plane);
-    plane.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
-    plane = null;
-  }
+  launcher = null;
+  startMesh = null;
+  targetMesh = null;
+  plane = null;
   planeState = null;
-
-  boatAlive = true;
-  attachedToPlane = gameMode === "target" && targetConfig === "planeToBoat";
-
-  let originX = 0, originZ = 0;
-  let padTopY;
-  if (gameMode === "target") {
-    originX = (Math.random() - 0.5) * 300;
-    originZ = (Math.random() - 0.5) * 300;
-    // Rayon volontairement bien au-delà de la distance du brouillard (620) :
-    // aucune terre ne peut donc jamais devenir visible à l'horizon, même en
-    // levant la vue depuis le bateau.
-    oceanSafeZone = { x: originX, z: originZ, radius: 800 };
-    padTopY = WATER_LEVEL + BOAT_DECK_HEIGHT;
-  } else {
-    oceanSafeZone = null;
-    padTopY = heightAt(originX, originZ) + LAUNCHER_PAD_HEIGHT;
-  }
+  targetAlive = true;
+  attachedToPlane = gameMode === "target" && missionStart === "plane";
 
   rocketState.velocity.set(0, 0, 0);
   rocketState.heading = 0;
@@ -1385,30 +1444,56 @@ function restart() {
   rocketState.grounded = false;
   rocketState.launched = false;
 
-  if (gameMode === "target") {
-    launcher = buildBoat(originX, originZ);
-    launcher.visible = true;
-    plane = buildPlane();
-    scene.add(plane);
-    planeState = { center: new THREE.Vector3(originX, 0, originZ), heading: Math.PI / 2, alive: true, velocity: new THREE.Vector3() };
-    updatePlane(0, clock.getElapsedTime());
-    plane.visible = true;
+  let originX = 0, originZ = 0;
 
-    if (attachedToPlane) {
+  if (gameMode === "target") {
+    originX = (Math.random() - 0.5) * 300;
+    originZ = (Math.random() - 0.5) * 300;
+    // Rayon volontairement bien au-delà de la distance du brouillard (620) :
+    // aucune terre ne peut donc jamais devenir visible à l'horizon, même en
+    // levant la vue depuis un objet flottant.
+    oceanSafeZone = { x: originX, z: originZ, radius: 800 };
+
+    // Si la cible est statique (bateau/sous-marin), on l'éloigne du départ
+    // pour qu'il faille vraiment viser et voler jusqu'à elle.
+    let targetX = originX, targetZ = originZ;
+    if (missionTarget !== "plane") {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 260 + Math.random() * 140;
+      targetX = originX + Math.cos(angle) * dist;
+      targetZ = originZ + Math.sin(angle) * dist;
+    }
+
+    if (missionStart === "plane" || missionTarget === "plane") {
+      plane = buildPlane();
+      scene.add(plane);
+      const centerX = missionStart === "plane" ? originX : targetX;
+      const centerZ = missionStart === "plane" ? originZ : targetZ;
+      planeState = { center: new THREE.Vector3(centerX, 0, centerZ), heading: Math.PI / 2, alive: true, velocity: new THREE.Vector3() };
+      updatePlane(0, clock.getElapsedTime());
+    }
+
+    if (missionStart === "boat") startMesh = buildBoat(originX, originZ);
+    else if (missionStart === "submarine") startMesh = buildSubmarine(originX, originZ);
+
+    if (missionTarget === "boat") targetMesh = buildBoat(targetX, targetZ);
+    else if (missionTarget === "submarine") targetMesh = buildSubmarine(targetX, targetZ);
+
+    if (missionStart === "plane") {
       // Départ : accroché sous l'avion porteur. Le missile suit sa position
       // et son cap tant qu'il n'est pas largué (touche L).
       rocketState.position.copy(plane.position);
       rocketState.heading = planeState.heading;
       rocketState.pitchAngle = 0;
-      flashToast("Fonce sur le bateau !");
     } else {
-      const startY = padTopY + 1.7;
-      rocketState.position.set(originX, startY, originZ);
-      flashToast("Fonce sur l'avion !");
+      const deckHeight = missionStart === "boat" ? BOAT_DECK_HEIGHT : SUB_DECK_HEIGHT;
+      rocketState.position.set(originX, WATER_LEVEL + deckHeight + 1.7, originZ);
     }
+    flashToast(`Fonce sur ${ENTITY_LABEL[missionTarget]} !`);
   } else {
+    oceanSafeZone = null;
+    const startY = heightAt(originX, originZ) + LAUNCHER_PAD_HEIGHT + 1.7;
     launcher = buildLauncher(originX, originZ);
-    const startY = padTopY + 1.7;
     rocketState.position.set(originX, startY, originZ);
   }
 

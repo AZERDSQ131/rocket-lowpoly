@@ -23,21 +23,29 @@
         <button class="modeCard" id="modeTargetBtn" type="button">
           <div class="modeIcon">🎯</div>
           <div class="modeTitle">Mode Cible</div>
-          <div class="modeDesc">Choisis ton point de départ et ta cible : bateau ou avion.</div>
+          <div class="modeDesc">Configure toi-même ton point de départ et ta cible.</div>
         </button>
       </div>
 
-      <div class="modeGrid hidden" id="modeGridTarget">
-        <button class="modeCard" id="configBoatToPlaneBtn" type="button">
-          <div class="modeIcon">🚤 → ✈️</div>
-          <div class="modeTitle">Bateau → Avion</div>
-          <div class="modeDesc">Décolle depuis un bateau en pleine mer et fonce sur l'avion qui survole la zone.</div>
-        </button>
-        <button class="modeCard" id="configPlaneToBoatBtn" type="button">
-          <div class="modeIcon">✈️ → 🚤</div>
-          <div class="modeTitle">Avion → Bateau</div>
-          <div class="modeDesc">Largué en plein vol depuis l'avion, plonge sur le bateau en contrebas.</div>
-        </button>
+      <div class="configForm hidden" id="modeGridTarget">
+        <div class="configRow">
+          <label for="startSelect">Départ</label>
+          <select id="startSelect">
+            <option value="boat">🚤 Bateau</option>
+            <option value="plane">✈️ Avion</option>
+            <option value="submarine">🤿 Sous-marin</option>
+          </select>
+        </div>
+        <div class="configRow">
+          <label for="targetSelect">Cible</label>
+          <select id="targetSelect">
+            <option value="boat">🚤 Bateau</option>
+            <option value="plane" selected>✈️ Avion</option>
+            <option value="submarine">🤿 Sous-marin</option>
+          </select>
+        </div>
+        <p id="configWarning" class="configWarning hidden">Le départ et la cible doivent être différents.</p>
+        <button id="launchConfigBtn" class="launchConfigBtn" type="button">Lancer la mission</button>
       </div>
 
       <button id="backToMainMenuBtn" class="hidden" type="button">← Retour</button>
