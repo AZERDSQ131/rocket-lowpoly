@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rocket Lowpoly</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <div id="menuOverlay">
+    <div id="menuCard">
+      <h1>🚀 Rocket Lowpoly</h1>
+      <p class="menuSubtitle" id="menuSubtitleText">Choisis un mode de jeu</p>
+
+      <div class="modeGrid" id="modeGridMain">
+        <button class="modeCard" id="modeFreeBtn" type="button">
+          <div class="modeIcon">🌍</div>
+          <div class="modeTitle">Mode Libre</div>
+          <div class="modeDesc">Un monde infini généré aléatoirement. Décolle et explore sans objectif.</div>
+        </button>
+        <button class="modeCard" id="modeTargetBtn" type="button">
+          <div class="modeIcon">🎯</div>
+          <div class="modeTitle">Mode Cible</div>
+          <div class="modeDesc">Choisis ton point de départ et ta cible : bateau ou avion.</div>
+        </button>
+      </div>
+
+      <div class="modeGrid hidden" id="modeGridTarget">
+        <button class="modeCard" id="configBoatToPlaneBtn" type="button">
+          <div class="modeIcon">🚤 → ✈️</div>
+          <div class="modeTitle">Bateau → Avion</div>
+          <div class="modeDesc">Décolle depuis un bateau en pleine mer et fonce sur l'avion qui survole la zone.</div>
+        </button>
+        <button class="modeCard" id="configPlaneToBoatBtn" type="button">
+          <div class="modeIcon">✈️ → 🚤</div>
+          <div class="modeTitle">Avion → Bateau</div>
+          <div class="modeDesc">Largué en plein vol depuis l'avion, plonge sur le bateau en contrebas.</div>
+        </button>
+      </div>
+
+      <button id="backToMainMenuBtn" class="hidden" type="button">← Retour</button>
+    </div>
+  </div>
+
+  <button id="menuButton" type="button">☰ Menu</button>
+
+  <div id="crosshair"></div>
+  <div id="targetArrow" class="hidden">▲</div>
+  <div id="targetBox" class="hidden"></div>
+
+  <div id="radar" class="hidden">
+    <div id="radarSelf"></div>
+    <div id="radarPlane"></div>
+  </div>
+
+  <div id="toast"></div>
+
+  <div id="launchHint">Appuie sur <b>L</b> pour lancer</div>
+
+  <div id="flightHud">
+    <div class="instrument">
+      <div class="instrumentLabel">VITESSE</div>
+      <div class="instrumentValue"><span id="speedValue">0</span><small>m/s</small></div>
+    </div>
+
+    <div class="gyroWrap">
+      <canvas id="attitudeCanvas" width="128" height="128"></canvas>
+      <div class="gyroLabel">ATTITUDE</div>
+      <div id="throttleLamp"></div>
+    </div>
+
+    <div class="instrument">
+      <div class="instrumentLabel">ALTITUDE</div>
+      <div class="instrumentValue"><span id="altValue">0</span><small>m</small></div>
+    </div>
+  </div>
+
+  <button id="soundButton" type="button">🔇 Activer le son</button>
+
+  <div id="help">
+    <div><b>◄ ►</b> ou <b>Q D</b> — direction (lacet, même sur la rampe)</div>
+    <div><b>L</b> — lancer le missile</div>
+    <div><b>▲ ▼</b> ou <b>Z S</b> — tangage (monter / descendre)</div>
+    <div><b>Espace</b> (maintenir) — allumer le booster à propergol solide</div>
+    <div><b>Clic + glisser</b> — balayer l'environnement du regard</div>
+    <div><b>R</b> — nouvelle tentative</div>
+    <div><b>M</b> — retour au menu</div>
+  </div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+      }
+    }
+  </script>
+  <script type="module" src="main.js"></script>
+</body>
+</html>
